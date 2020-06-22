@@ -1,4 +1,7 @@
 using System;
+using System.IO;
+using System.Linq;
+using System.Security.Cryptography.X509Certificates;
 
 namespace CyberSource.Clients
 {
@@ -402,7 +405,7 @@ namespace CyberSource.Clients
 
         private void CheckMerchantID()
         {
-            if (merchantID == null)
+            if (string.IsNullOrEmpty(merchantID))
             {
                 throw new ApplicationException(
                     "CONFIGURATION OR CODE BUG:  merchantID is missing!");
@@ -413,6 +416,89 @@ namespace CyberSource.Clients
         {
             get { return useSignedAndEncrypted; }
             set { useSignedAndEncrypted = value; }
+        }
+
+        internal X509Certificate2 ClientCertificate
+        {
+            get
+            {
+                return CertificateCollection.Cast<X509Certificate2>().FirstOrDefault(c => c.Subject.Contains(NonNullMerchantID));
+            }
+        }
+
+        internal X509Certificate2 ServiceCertificate
+        {
+            get
+            {
+                if (UseSignedAndEncrypted)
+                {
+                    return CertificateCollection.Cast<X509Certificate2>().FirstOrDefault(c => c.Subject.Contains(BaseClient.CYBERSOURCE_PUBLIC_KEY)) ?? ClientCertificate;
+                }
+                else
+                {
+                    return ClientCertificate;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets Certificate collection
+        /// </summary>
+        public X509Certificate2Collection CertificateCollection
+        {
+            get
+            {
+                if (certificateCollection == null)
+                {
+                    SetCertificateCollection();
+                }
+
+                return certificateCollection;
+            }
+            set { certificateCollection = value; }
+        }
+
+        /// <summary>
+        /// Loads Certificate collection from Base64 encoded string
+        /// </summary>
+        /// <param name="base64cert">Base64 encoded certificate collection</param>
+        public void LoadCertificatesFromBase64(string base64cert)
+        {
+            byte[] rawData = Convert.FromBase64String(base64cert);
+
+            var collection = new X509Certificate2Collection();
+
+            collection.Import(rawData, this.Password, X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable | X509KeyStorageFlags.PersistKeySet);
+
+            if (collection.Count > 0)
+            {
+                this.CertificateCollection = collection;
+            }
+        }
+
+        private X509Certificate2Collection certificateCollection;
+
+        private void SetCertificateCollection()
+        {
+            //add certificate credentials
+            string keyFilePath = Path.Combine(KeysDirectory, EffectiveKeyFilename);
+
+            // Changes for SHA2 certificates support
+            X509Certificate2Collection collection = new X509Certificate2Collection();
+            collection.Import(keyFilePath, EffectivePassword, X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable | X509KeyStorageFlags.PersistKeySet);
+
+            certificateCollection = new X509Certificate2Collection(collection.Cast<X509Certificate2>().Where(c =>
+            {
+                return c.Subject.Contains(NonNullMerchantID)
+                    || c.Subject.Contains(BaseClient.CYBERSOURCE_PUBLIC_KEY);
+            }).ToArray());
+
+            if (ClientCertificate == null)
+            {
+                var certificate = new X509Certificate2(keyFilePath, EffectivePassword, X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable | X509KeyStorageFlags.PersistKeySet);
+
+                certificateCollection.Add(certificate);
+            }
         }
     }
 }

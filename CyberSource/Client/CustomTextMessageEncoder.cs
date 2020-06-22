@@ -49,27 +49,27 @@ namespace CyberSource.Clients
 
         public override Message ReadMessage(ArraySegment<byte> buffer, BufferManager bufferManager, string contentType)
         {   
-            byte[] msgContents = new byte[buffer.Count];
-            Array.Copy(buffer.Array, buffer.Offset, msgContents, 0, msgContents.Length);
             bufferManager.ReturnBuffer(buffer.Array);
 
-            MemoryStream stream = new MemoryStream(msgContents);
-            return ReadMessage(stream, int.MaxValue);
+            using (MemoryStream stream = new MemoryStream(buffer.Array, buffer.Offset, buffer.Count))
+            {
+                return ReadMessage(stream, int.MaxValue);
+            }
         }
 
         public override Message ReadMessage(Stream stream, int maxSizeOfHeaders, string contentType)
         {
-            var sr = new StreamReader(stream);
-            var wireResponse = sr.ReadToEnd();
-
             // Fix for Xml external entity injection violation in fortify report
             XmlReaderSettings settings = new XmlReaderSettings();
             settings.DtdProcessing = DtdProcessing.Prohibit;
             settings.XmlResolver = null;
 
             XmlDocument doc = new XmlDocument();
-            XmlReader reader = XmlReader.Create(new StringReader(wireResponse), settings);
-            doc.Load(reader);
+            using (XmlReader reader = XmlReader.Create(stream, settings))
+            {
+                doc.Load(reader);
+            }
+
             //We need to get rid of the security header because it is not signed by the web service.
             //The whole reason for the custom Encoder is to do this. the client rejected the unsigned header.
             //Our WCF client is set up to allow the absence of a security header but if the header exists then it must be signed.
@@ -79,34 +79,41 @@ namespace CyberSource.Clients
             {
                 n.DeleteSelf();
             }
-            reader = XmlReader.Create(new StringReader(doc.InnerXml), settings);
-            return Message.CreateMessage(reader, maxSizeOfHeaders, MessageVersion.Soap11);
+
+            using (var reader = XmlReader.Create(new StringReader(doc.InnerXml), settings))
+            {
+                return Message.CreateMessage(reader, maxSizeOfHeaders, MessageVersion.Soap11);
+            }
         }
 
         public override ArraySegment<byte> WriteMessage(Message message, int maxMessageSize, BufferManager bufferManager, int messageOffset)
         {
-            MemoryStream stream = new MemoryStream();
-            XmlWriter writer = XmlWriter.Create(stream, this.writerSettings);
-            message.WriteMessage(writer);
-            writer.Close();
+            using (MemoryStream stream = new MemoryStream())
+            using (XmlWriter writer = XmlWriter.Create(stream, this.writerSettings))
+            {
+                message.WriteMessage(writer);
 
-            byte[] messageBytes = stream.GetBuffer();
-            int messageLength = (int)stream.Position;
-            stream.Close();
+                writer.Flush();
 
-            int totalLength = messageLength + messageOffset;
-            byte[] totalBytes = bufferManager.TakeBuffer(totalLength);
-            Array.Copy(messageBytes, 0, totalBytes, messageOffset, messageLength);
+                int messageLength = (int)stream.Position;
+                int totalLength = messageLength + messageOffset;
 
-            ArraySegment<byte> byteArray = new ArraySegment<byte>(totalBytes, messageOffset, messageLength);
-            return byteArray;
+                byte[] totalBytes = bufferManager.TakeBuffer(totalLength);
+
+                byte[] messageBytes = stream.GetBuffer();
+
+                Array.Copy(messageBytes, 0, totalBytes, messageOffset, messageLength);
+
+                return new ArraySegment<byte>(totalBytes, messageOffset, messageLength);
+            }
         }
 
         public override void WriteMessage(Message message, Stream stream)
         {
-            XmlWriter writer = XmlWriter.Create(stream, this.writerSettings);
-            message.WriteMessage(writer);
-            writer.Close();
+            using (XmlWriter writer = XmlWriter.Create(stream, this.writerSettings))
+            {
+                message.WriteMessage(writer);
+            }
         }
     }
 }

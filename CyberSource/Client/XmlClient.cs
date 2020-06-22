@@ -33,9 +33,11 @@ namespace CyberSource.Clients
             XmlReaderSettings settings = new XmlReaderSettings();
             settings.DtdProcessing = DtdProcessing.Prohibit;
             settings.XmlResolver = null;
-            XmlReader reader = XmlReader.Create(new StringReader(SOAP_ENVELOPE), settings);
 
-            mSoapEnvelope.Load(reader);
+            using (XmlReader reader = XmlReader.Create(new StringReader(SOAP_ENVELOPE), settings))
+            {
+                mSoapEnvelope.Load(reader);
+            }
         }
 
         private XmlClient() { }
@@ -87,39 +89,20 @@ namespace CyberSource.Clients
                 // obtain a copy of the request document enclosed in a SOAP envelope
                 XmlDocument doc = SoapWrap(request, nspace);
 
-                //Get the X509 cert and sign the SOAP Body    
-                string keyFilePath = Path.Combine(config.KeysDirectory, config.EffectiveKeyFilename);
-
-                X509Certificate2 cert = null;
-                X509Certificate2 cybsCert = null;
-
-                X509Certificate2Collection collection = new X509Certificate2Collection();
-                collection.Import(keyFilePath, config.EffectivePassword, X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable | X509KeyStorageFlags.PersistKeySet);
-
-                foreach (X509Certificate2 cert1 in collection)
+                //Get the X509 cert and sign the SOAP Body 
+                if (config.ClientCertificate != null)
                 {
-                    if (cert1.Subject.Contains(config.MerchantID))
+                    SignDocument(config.ClientCertificate, doc);
+                }
+
+                if (config.ServiceCertificate != null)
+                {
+                    if (config.UseSignedAndEncrypted)
                     {
-                        cert = cert1;
-                        break;
+                        encryptDocument(config.ServiceCertificate, doc);
                     }
                 }
 
-                SignDocument(cert, doc);
-
-                if (config.UseSignedAndEncrypted)
-                {
-                    foreach (X509Certificate2 cert1 in collection)
-                    {
-                        //Console.WriteLine(cert1.Subject);
-                        if (cert1.Subject.Contains("CyberSource_SJC_US"))
-                        {
-                            cybsCert = cert1;
-                            break;
-                        }
-                    }
-                    encryptDocument(cybsCert, doc);
-                }
                 // convert the document into an array of bytes using the
                 // encoding specified in the XML declaration line.
                 Encoding enc = GetEncoding(doc);
@@ -259,7 +242,7 @@ namespace CyberSource.Clients
             reference.DigestMethod = referenceDigestMethod;
             signedXML.AddReference(reference);
 
-            KeyedHashAlgorithm kha = KeyedHashAlgorithm.Create("RSA-SHA256");
+            //KeyedHashAlgorithm kha = KeyedHashAlgorithm.Create("RSA-SHA256");
 
             signedXML.ComputeSignature();
             XmlElement xmlDigitalSignature = signedXML.GetXml();
@@ -274,10 +257,12 @@ namespace CyberSource.Clients
             XmlReaderSettings settings = new XmlReaderSettings();
             settings.DtdProcessing = DtdProcessing.Prohibit;
             settings.XmlResolver = null;
-            XmlReader reader = XmlReader.Create(new StringReader(keyInfoTags), settings);
+            using (XmlReader reader = XmlReader.Create(new StringReader(keyInfoTags), settings))
+            {
+                //keyInfo.LoadXml("<root xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\" xmlns:wsse=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd\" ><ds:KeyInfo><SecurityTokenReference xmlns=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd\"><wsse:Reference URI=\"#X509Token\" ValueType=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-x509-token-profile-1.0#X509v3\"/></SecurityTokenReference></ds:KeyInfo></root>");
+                keyInfo.Load(reader);
+            }
 
-            //keyInfo.LoadXml("<root xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\" xmlns:wsse=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd\" ><ds:KeyInfo><SecurityTokenReference xmlns=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd\"><wsse:Reference URI=\"#X509Token\" ValueType=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-x509-token-profile-1.0#X509v3\"/></SecurityTokenReference></ds:KeyInfo></root>");
-            keyInfo.Load(reader);
             doc.DocumentElement.FirstChild.FirstChild.LastChild.AppendChild(doc.ImportNode(keyInfo.FirstChild.FirstChild, true));
 
             //Add The Base64 representation of the X509 cert to BinarySecurityToken Node
@@ -301,9 +286,10 @@ namespace CyberSource.Clients
             XmlReaderSettings settings = new XmlReaderSettings();
             settings.DtdProcessing = DtdProcessing.Prohibit;
             settings.XmlResolver = null;
-            XmlReader reader = XmlReader.Create(new StringReader(encData), settings);
-
-            encryptedDataTags.Load(reader);
+            using (XmlReader reader = XmlReader.Create(new StringReader(encData), settings))
+            {
+                encryptedDataTags.Load(reader);
+            }
             doc.DocumentElement.FirstChild.FirstChild.PrependChild(doc.ImportNode(encryptedDataTags.FirstChild.FirstChild, true));
 
             XmlElement elementToEncrypt = doc.GetElementsByTagName(REQUEST_MESSAGE)[0] as XmlElement;
@@ -432,8 +418,10 @@ namespace CyberSource.Clients
                 XmlReaderSettings settings = new XmlReaderSettings();
                 settings.DtdProcessing = DtdProcessing.Prohibit;
                 settings.XmlResolver = null;
-                XmlReader reader = XmlReader.Create(stream, settings);
-                xmlDoc.Load(reader);
+                using (XmlReader reader = XmlReader.Create(stream, settings))
+                {
+                    xmlDoc.Load(reader);
+                }
                 return (xmlDoc);
             }
             finally

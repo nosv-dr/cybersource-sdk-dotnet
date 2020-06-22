@@ -67,50 +67,33 @@ namespace CyberSource.Clients
                 //Setup endpoint Address with dns identity
                 AddressHeaderCollection headers = new AddressHeaderCollection();
                 EndpointAddress endpointAddress = new EndpointAddress( new Uri(config.EffectiveServerURL), EndpointIdentity.CreateDnsIdentity(config.EffectivePassword), headers );
-                
+
                 //Get instance of service
-                using( proc = new TransactionProcessorClient(currentBinding, endpointAddress)){
-                
+                using (proc = new TransactionProcessorClient(currentBinding, endpointAddress))
+                {
+
                     //Set protection level to sign & encrypt only
                     proc.Endpoint.Contract.ProtectionLevel = System.Net.Security.ProtectionLevel.Sign;
 
                     // set the timeout
                     TimeSpan timeOut = new TimeSpan(0, 0, 0, config.Timeout, 0);
                     currentBinding.SendTimeout = timeOut;
-              
-                    //add certificate credentials
-                    string keyFilePath = Path.Combine(config.KeysDirectory,config.EffectiveKeyFilename);
-                    proc.ClientCredentials.ClientCertificate.Certificate = new X509Certificate2(keyFilePath,config.EffectivePassword, X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable | X509KeyStorageFlags.PersistKeySet);
 
                     proc.ClientCredentials.ServiceCertificate.Authentication.CertificateValidationMode = System.ServiceModel.Security.X509CertificateValidationMode.None;
 
-                    // Changes for SHA2 certificates support
-                    X509Certificate2Collection collection = new X509Certificate2Collection();
-                    collection.Import(keyFilePath, config.EffectivePassword, X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable | X509KeyStorageFlags.PersistKeySet);
-
-                    foreach (X509Certificate2 cert1 in collection)
+                    if (config.ClientCertificate != null)
                     {
-                        if (cert1.Subject.Contains(config.MerchantID))
-                        {
-                            proc.ClientCredentials.ClientCertificate.Certificate = cert1;
-                            proc.ClientCredentials.ServiceCertificate.DefaultCertificate = cert1;
-                            break;
-                        }
+                        proc.ClientCredentials.ClientCertificate.Certificate = config.ClientCertificate;
                     }
 
-                    if (config.UseSignedAndEncrypted)
+                    if (config.ServiceCertificate != null)
                     {
-                        foreach (X509Certificate2 cert2 in collection)
+                        if (config.UseSignedAndEncrypted)
                         {
-                            //Console.WriteLine(cert1.Subject);
-                            if (cert2.Subject.Contains(CYBERSOURCE_PUBLIC_KEY))
-                            {
-                                //Set protection level to sign & encrypt only
-                                proc.Endpoint.Contract.ProtectionLevel = System.Net.Security.ProtectionLevel.EncryptAndSign;
-                                proc.ClientCredentials.ServiceCertificate.DefaultCertificate = cert2;
-                                break;
-                            }
+                            proc.Endpoint.Contract.ProtectionLevel = System.Net.Security.ProtectionLevel.EncryptAndSign;
                         }
+
+                        proc.ClientCredentials.ServiceCertificate.DefaultCertificate = config.ServiceCertificate;
                     }
 
                     // send request now
@@ -119,15 +102,15 @@ namespace CyberSource.Clients
                     if (logger != null)
                     {
                         logger.LogRequest(req, config.Demo);
-                    }                   
-                    
+                    }
+
                     ReplyMessage reply = proc.runTransaction(requestMessage);
                     XmlNode rep = SerializeObjectToXmlNode(reply);
                     if (logger != null)
                     {
                         logger.LogReply(rep, config.Demo);
-                    }  
-                   
+                    }
+
                     return (reply);
                 }
 			}
@@ -179,8 +162,11 @@ namespace CyberSource.Clients
                 XmlReaderSettings settings = new XmlReaderSettings();
                 settings.DtdProcessing = DtdProcessing.Prohibit;
                 settings.XmlResolver = null;
-                XmlReader reader = XmlReader.Create(memoryStream, settings);
-                doc.Load(reader);
+
+                using (XmlReader reader = XmlReader.Create(memoryStream, settings))
+                {
+                    doc.Load(reader);
+                }
 
                 resultNode = doc.DocumentElement;
             }
