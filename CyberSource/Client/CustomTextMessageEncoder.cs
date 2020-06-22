@@ -80,20 +80,14 @@ namespace CyberSource.Clients
                 n.DeleteSelf();
             }
 
-            using (var reader = XmlReader.Create(new StringReader(doc.InnerXml), settings))
-            {
-                return Message.CreateMessage(reader, maxSizeOfHeaders, MessageVersion.Soap11);
-            }
+            return Message.CreateMessage(new XmlNodeReader(doc), maxSizeOfHeaders, MessageVersion.Soap11);
         }
 
         public override ArraySegment<byte> WriteMessage(Message message, int maxMessageSize, BufferManager bufferManager, int messageOffset)
         {
             using (MemoryStream stream = new MemoryStream())
-            using (XmlWriter writer = XmlWriter.Create(stream, this.writerSettings))
             {
-                message.WriteMessage(writer);
-
-                writer.Flush();
+                WriteMessage(message, stream);
 
                 int messageLength = (int)stream.Position;
                 int totalLength = messageLength + messageOffset;
@@ -113,6 +107,7 @@ namespace CyberSource.Clients
             using (XmlWriter writer = XmlWriter.Create(stream, this.writerSettings))
             {
                 message.WriteMessage(writer);
+                writer.Flush();
             }
         }
     }

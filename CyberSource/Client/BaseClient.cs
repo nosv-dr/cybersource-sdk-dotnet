@@ -270,7 +270,11 @@ namespace CyberSource.Clients
             try
             {
                 logger = PrepareLog(InternalBuildConfiguration(null, false));
+            }
+            catch { }
 
+            try
+            {
                 switch (type.Name)
                 {
                     case "RequestMessage":

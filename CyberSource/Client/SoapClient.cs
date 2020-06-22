@@ -60,6 +60,7 @@ namespace CyberSource.Clients
                 logger = PrepareLog(config);
                 SetConnectionLimit(config);
 
+                ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072;
 
                 CustomBinding currentBinding = getWCFCustomBinding(config);
 
